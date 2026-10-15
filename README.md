@@ -51,3 +51,21 @@ python monitor.py --dry-run
 ```
 
 dry-runはDiscord送信・状態保存をしません。結果は `report.json`（Git対象外）に出力します。実際の状態遷移を試すテストは `test_events.py` にあります。
+
+## Watchdogと自動復旧
+
+`Pokeca watchdog` が日次処理の完了時と毎時17分・47分に動作します。
+
+- 日次処理の失敗・タイムアウトを検出すると自動rerun。1障害につき最大2回、再試行間隔は30分以上です。古いコードで失敗している場合は最新mainを新規実行します。
+- 毎朝9時の予定から2時間を過ぎても通常チェックを確認できない場合、1回だけ補完実行を起動します。その実行が失敗した場合も最大2回まで再試行します。
+- 実行中の処理は重複起動しません。1時間を超える待機・実行、取消・承認待ち、無効化されたワークフローは要確認通知とします。
+- 自動復旧の開始、再試行上限到達、復旧をDiscordへ通知します。同じ障害・同じ段階では繰り返し送信せず、正常時は無通知です。
+- 接続テストは日次チェックの成功扱いにしません。通常チェックの表示名は `Pokeca daily monitor`、接続テストは `Discord connection test` です。
+- 再試行回数は独立した `watchdog-state` ブランチの `watchdog.json` に保存します。API呼び出しの前に回数を保存し、応答不明時も連続rerunを防ぎます。
+- watchdogは監視プログラムをimportせず独立して動きます。`workflow_run` では信頼済みの既定ブランチだけを実行し、forkやPRのコードは読み込みません。
+
+Actions → **Pokeca watchdog** → **Run workflow** のテスト項目をオンにすると、直近の通常チェックを実際にrerunして権限を検証します。実障害の再試行枠は消費しません。30分以内の重複テストは停止します。
+
+watchdog自身もGitHub Actions上で動くため、GitHub Actions全体が停止した場合はその間の検知・復旧を実行できません。Discord自体の障害も同じWebhookでは通知できません。これらを監視するには別サービス上の外部監視が必要です。
+
+仕様: [GitHub workflow_run / schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)、[Workflow runs REST API](https://docs.github.com/en/rest/actions/workflow-runs)。
