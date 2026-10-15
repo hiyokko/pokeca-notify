@@ -1,4 +1,5 @@
 name: Pokeca daily check
+run-name: ${{ inputs.test_notification && 'Discord connection test' || 'Pokeca daily monitor' }}
 
 on:
   schedule:

@@ -1,0 +1,56 @@
+name: Pokeca watchdog
+run-name: ${{ inputs.test_rerun && 'Watchdog rerun test' || 'Pokeca watchdog' }}
+
+on:
+  workflow_run:
+    workflows: ['Pokeca daily check']
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      test_rerun:
+        description: '通常チェックを再実行してwatchdogの権限を検証'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: pokeca-watchdog
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Privileged workflow_run: execute only trusted default-branch code.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Test watchdog decisions
+        run: python -m unittest test_watchdog -v
+      - name: Inspect and recover daily monitor
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TEST_RERUN: ${{ inputs.test_rerun }}
+        run: |
+          if [ "$TEST_RERUN" = "true" ]; then
+            python watchdog.py --test-rerun
+          else
+            python watchdog.py
+          fi
