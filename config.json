@@ -1,7 +1,15 @@
 {
   "check_amazon_stock": true,
   "scope": "既存・新規BOX、BOXを含むセット。単品パック・BOXを含まないセット・オリパ・サプライは除外。",
-  "retailers": ["Amazon.co.jp", "ポケモンセンターオンライン"],
+  "retailers": [
+    "Amazon.co.jp",
+    "ポケモンセンターオンライン"
+  ],
   "schedule_timezone": "Asia/Tokyo",
-  "schedule_time": "09:00"
+  "schedule_time": "09:00",
+  "summary_sources": [
+    "mirar",
+    "board",
+    "cardchusen"
+  ]
 }

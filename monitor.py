@@ -2,7 +2,6 @@
 """Daily Japanese Pokemon TCG purchase-information monitor."""
 import argparse
 import base64
-import copy
 import json
 import os
 import re
@@ -14,7 +13,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
-from adapters import SITE, OFFICIAL, article_records, official_records, stock_status
+from adapters import SITE, stock_status
+from events import (JST, SOURCES, identity, pokeget_offers, mirar_offers,
+                    board_offers, cardchusen_offers, observation, plan_events)
 
 UA = "PokecaNotify/1.0 (+https://github.com/hiyokko/pokeca-notify)"
 
@@ -45,7 +46,7 @@ def safe_error(error):
 
 def fresh_state():
     return {"version": 1, "started_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-            "posts": {}, "records": {}, "stock": {}, "official_initialized": False}
+            "posts": {}, "records": {}, "stock": {}, "events": {}, "initialized_sources": []}
 
 
 def validate_state(state):
@@ -56,6 +57,11 @@ def validate_state(state):
             raise ValueError("状態ファイルが破損しています")
     if not isinstance(state.get("started_at"), str):
         raise ValueError("開始日時がありません")
+    for name in ('events',):
+        if not isinstance(state.get(name, {}), dict):
+            raise ValueError('購入イベント状態が破損しています')
+    if not isinstance(state.get('initialized_sources', []), list):
+        raise ValueError('ソース状態が破損しています')
     return state
 
 
@@ -118,7 +124,7 @@ def send_discord(records, webhook):
         raise ValueError("DISCORD_WEBHOOK_URLの形式を確認してください")
     payload = {"username": "ポケカ通知", "allowed_mentions": {"parse": []},
                "content": "🃏 ポケカ日次チェック",
-               "embeds": [{"title": ("【" + r.get("event", "情報更新") + "】" + r["title"])[:220],
+               "embeds": [{"title": ("【" + r.get("event", "購入機会") + "】" + r["title"])[:220],
                            "url": r["url"], "description": r.get("note", "")[:500],
                            "color": 16763904,
                            "footer": {"text": r.get("retailer", "") + " · " + r.get("source", "")}}
@@ -165,22 +171,6 @@ def post_index():
         time.sleep(0.5)
 
 
-def changed_record(state, record, baseline=False):
-    old = state["records"].get(record["key"])
-    changed = not baseline and old != record["signature"]
-    if changed:
-        record["event"] = "新着情報" if old is None else "情報更新"
-    return changed
-
-
-def stock_transition(state, url, status):
-    if status == "unknown":
-        return False
-    previous = state["stock"].get(url)
-    state["stock"][url] = status
-    return status == "available" and previous == "unavailable"
-
-
 def run(args):
     store = StateStore(args.state, args.github_state)
     state = store.load()
@@ -188,111 +178,104 @@ def run(args):
     if not args.dry_run and not webhook:
         raise ValueError("DISCORD_WEBHOOK_URLが未設定です")
     config = json.loads(Path("config.json").read_text())
-    pending, errors, scanned = [], [], 0
     if args.test_notification:
         event = {"title": "接続テスト", "url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "hiyokko/pokeca-notify"),
                  "event": "テスト", "retailer": "Amazon・ポケモンセンターオンライン",
-                 "note": "Discordへの接続を確認しました。日次チェックは毎朝9時（日本時間）。記事の更新と確認できた在庫変化を通知します。"}
+                 "note": "日次チェックは毎朝9時（日本時間）。BOX／BOX入りセットの新しい抽選開始と再販・在庫復活のみ通知します。記事更新だけでは通知しません。"}
         if not args.dry_run:
             send_discord([event], webhook)
         print("接続テスト完了（dry-run: {}）".format(args.dry_run))
         return 0
+    now = datetime.now(JST)
+    errors, successful, offers, source_counts = [], [], [], {}
+    scanned = 0
     try:
         index = post_index()
     except Exception as error:
         errors.append("ポケゲト記事一覧: " + safe_error(error))
         index = []
+    pokeget_ok = bool(index)
     for meta in index:
         key = str(meta["id"])
         cached = state["posts"].get(key)
-        if cached and cached.get("modified") == meta["modified_gmt"]:
+        if cached and cached.get("modified") == meta["modified_gmt"] and 'offers' in cached:
+            # Even without an article update, scheduled rounds must become open.
+            offers.extend(cached['offers'])
             continue
         try:
             post, _ = get_json(SITE + "/wp-json/wp/v2/posts/{}?_fields=id,link,title,content,modified_gmt".format(meta["id"]))
-            records, catalog = article_records(post)
-            baseline = not cached and meta["modified_gmt"] <= state["started_at"]
-            for record in records:
-                if changed_record(state, record, baseline):
-                    pending.append(record)
-                else:
-                    state["records"][record["key"]] = record["signature"]
-            state["posts"][key] = {**catalog, "modified": meta["modified_gmt"], "records": records}
+            found, catalog = pokeget_offers(post)
+            state["posts"][key] = {**catalog, "modified": meta["modified_gmt"], "offers": found}
+            offers.extend(found)
             scanned += 1
         except Exception as error:
+            pokeget_ok = False
             errors.append("記事 {}: {}".format(key, safe_error(error)))
         time.sleep(0.3)
-    # Retry records left pending after a previous delivery failure, even if the
-    # article's modified timestamp did not change.
-    pending_keys = {r["key"] for r in pending}
-    for post in state["posts"].values():
-        for record in post.get("records", []):
-            if record["key"] not in pending_keys and changed_record(state, record):
-                pending.append(record)
-                pending_keys.add(record["key"])
-    try:
-        html, _ = request(OFFICIAL)
-        records = official_records(html)
-        for record in records:
-            if changed_record(state, record, not state["official_initialized"]):
-                pending.append(record)
-            else:
-                state["records"][record["key"]] = record["signature"]
-        state["official_initialized"] = True
-    except Exception as error:
-        errors.append("公式ニュース: " + safe_error(error))
+    if pokeget_ok:
+        successful.append('ポケゲトちゃんねる')
+    source_counts['ポケゲトちゃんねる'] = len(offers)
+    known = {identity(p['title']) for p in state['posts'].values() if p['kind'] in {'box', 'box_set'}}
+    # Mirar is Pokemon-only and establishes identity for the mixed-TCG board.
+    for source_id in ('mirar', 'board', 'cardchusen'):
+        if source_id not in config.get('summary_sources', []):
+            continue
+        name, url = SOURCES[source_id]
+        try:
+            html, _ = request(url)
+            parser = {'mirar': mirar_offers, 'board': board_offers, 'cardchusen': cardchusen_offers}[source_id]
+            found = parser(html) if source_id == 'mirar' else parser(html, known)
+            offers.extend(found)
+            known.update(o['product'] for o in found)
+            successful.append(name)
+            source_counts[name] = len(found)
+        except Exception as error:
+            errors.append(name + ': ' + safe_error(error))
     products = {}
-    for post in state["posts"].values():
-        for record in post.get("records", []):
-            for url in record.get("products", []):
-                products[url] = record
+    for offer in offers:
+        if urlsplit(offer['url']).hostname == 'www.amazon.co.jp':
+            products[offer['url']] = offer
     unknown = 0
     if config.get("check_amazon_stock", False):
-        for url, record in products.items():
-            if urlsplit(url).hostname != "www.amazon.co.jp":
-                continue
+        for url, offer in products.items():
             try:
                 html, _ = request(url)
                 status = stock_status(html, url)
             except Exception:
-                status = "unknown"
-            if status == "unknown":
+                status = 'unknown'
+            if status == 'unknown':
                 unknown += 1
-                continue
-            before = copy.deepcopy(state["stock"])
-            if stock_transition(state, url, status):
-                # Keep the old state until Discord confirms this transition.
-                state["stock"] = before
-                pending.append({**record, "key": "stock:" + url, "url": url,
-                                "event": "在庫復活", "stock_url": url,
-                                "note": "Amazon.co.jp販売・購入可能表示を確認。販売単位と価格を購入前に確認してください。"})
+            else:
+                offers.append(observation(offer['title'], 'Amazon', 'sale', 'Amazon公式',
+                                          url, url, 'open' if status == 'available' else 'closed', direct=True))
+                successful.append('Amazon公式')
             time.sleep(0.5)
+    pending = plan_events(state, offers, now, successful)
+    # Save observations first, but mark purchase events delivered only after the
+    # webhook confirms receipt. A failed delivery is retried on the next run.
     if not args.dry_run:
         store.save(state)
     for offset in range(0, len(pending), 5):
         batch = pending[offset:offset + 5]
         if args.dry_run:
             for record in batch:
-                print(record["event"], record["retailer"], record["title"])
+                print(record['event'], record['retailer'], record['title'])
         else:
             send_discord(batch, webhook)
             for record in batch:
-                if record.get("stock_url"):
-                    state["stock"][record["stock_url"]] = "available"
-                else:
-                    state["records"][record["key"]] = record["signature"]
+                state['events'][record['key']] = record['after']
             store.save(state)
-    catalog = [{"title": p["title"], "url": p["url"], "kind": p["kind"]} for p in state["posts"].values()]
-    report = {"updated_articles": scanned, "catalog_articles": len(catalog),
-              "box_articles": sum(p["kind"] in {"box", "box_set"} for p in catalog),
-              "review_articles": sum(p["kind"] == "review" for p in catalog),
-              "product_urls": len(products), "stock_unknown": unknown,
-              "notifications": len(pending), "errors": errors,
-              "limits": "発見した記事・商品が対象。全BOXの網羅、記事に未掲載の販売、確認間の短時間在庫は保証しません。ポケセン在庫の直接確認は未対応。"}
+    report = {'checked_at': now.isoformat(), 'updated_articles': scanned,
+              'catalog_articles': len(state['posts']), 'source_offers': source_counts,
+              'tracked_purchase_events': len(state.get('events', {})),
+              'product_urls': len(products), 'stock_unknown': unknown,
+              'notifications': len(pending), 'errors': errors,
+              'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。'}
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    Path("report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as file:
-            file.write("## ポケカ日次チェック\n\n```json\n" + json.dumps(report, ensure_ascii=False, indent=2) + "\n```\n")
+    Path('report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
+            file.write('## ポケカ日次チェック\n\n```json\n' + json.dumps(report, ensure_ascii=False, indent=2) + '\n```\n')
     return 1 if errors else 0
 
 
