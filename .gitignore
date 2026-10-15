@@ -1,0 +1,8 @@
+.state.json
+.state.tmp
+report.json
+.env
+.env.*
+__pycache__/
+*.pyc
+.DS_Store
