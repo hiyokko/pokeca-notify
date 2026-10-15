@@ -11,5 +11,7 @@
     "mirar",
     "board",
     "cardchusen"
-  ]
+  ],
+  "check_toretoku_psa_oripa": true,
+  "additional_scope": "トレトク公式ブログのポケモンPSAオリパ・PSA10くじ販売告知（BOX条件とは別枠）。"
 }

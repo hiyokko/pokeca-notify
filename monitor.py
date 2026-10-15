@@ -17,6 +17,8 @@ from adapters import SITE, stock_status
 from events import (JST, SOURCES, identity, pokeget_offers, mirar_offers,
                     board_offers, cardchusen_offers, observation, plan_events)
 
+from toretoku import fetch_posts as toretoku_posts, plan_announcements
+
 UA = "PokecaNotify/1.0 (+https://github.com/hiyokko/pokeca-notify)"
 
 
@@ -62,6 +64,9 @@ def validate_state(state):
             raise ValueError('購入イベント状態が破損しています')
     if not isinstance(state.get('initialized_sources', []), list):
         raise ValueError('ソース状態が破損しています')
+    if 'toretoku_started_at' in state:
+        if datetime.fromisoformat(state['toretoku_started_at']).tzinfo is None:
+            raise ValueError('トレトクの開始日時が不正です')
     return state
 
 
@@ -181,7 +186,7 @@ def run(args):
     if args.test_notification:
         event = {"title": "接続テスト", "url": "https://github.com/" + os.environ.get("GITHUB_REPOSITORY", "hiyokko/pokeca-notify"),
                  "event": "テスト", "retailer": "Amazon・ポケモンセンターオンライン",
-                 "note": "日次チェックは毎朝9時（日本時間）。BOX／BOX入りセットの新しい抽選開始と再販・在庫復活のみ通知します。記事更新だけでは通知しません。"}
+                 "note": "日次チェックは毎朝9時（日本時間）。BOX／BOX入りセットの新しい抽選開始・再販と、トレトクのポケモンPSAオリパ販売告知を通知します。記事更新だけでは通知しません。"}
         if not args.dry_run:
             send_discord([event], webhook)
         print("接続テスト完了（dry-run: {}）".format(args.dry_run))
@@ -251,6 +256,16 @@ def run(args):
                 successful.append('Amazon公式')
             time.sleep(0.5)
     pending = plan_events(state, offers, now, successful)
+    toretoku_count = 0
+    if config.get('check_toretoku_psa_oripa', False):
+        try:
+            posts = toretoku_posts(get_json)
+            announcements, count = plan_announcements(state, posts, now)
+            pending.extend(announcements)
+            toretoku_count = len(posts)
+            source_counts['トレトク公式ブログ'] = count
+        except Exception as error:
+            errors.append('トレトク公式ブログ: ' + safe_error(error))
     # Save observations first, but mark purchase events delivered only after the
     # webhook confirms receipt. A failed delivery is retried on the next run.
     if not args.dry_run:
@@ -267,10 +282,11 @@ def run(args):
             store.save(state)
     report = {'checked_at': now.isoformat(), 'updated_articles': scanned,
               'catalog_articles': len(state['posts']), 'source_offers': source_counts,
+              'toretoku_articles': toretoku_count,
               'tracked_purchase_events': len(state.get('events', {})),
               'product_urls': len(products), 'stock_unknown': unknown,
               'notifications': len(pending), 'errors': errors,
-              'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。'}
+              'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。トレトクPSAオリパは公式の販売告知が対象で、在庫の直接確認はしません。'}
     print(json.dumps(report, ensure_ascii=False, indent=2))
     Path('report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     if os.environ.get('GITHUB_STEP_SUMMARY'):
