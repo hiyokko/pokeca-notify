@@ -4,7 +4,7 @@
     "started_at": "2026-10-16T02:34:56.122310+00:00",
     "retries": 1,
     "bootstrap_dispatched": false,
-    "last_notice": null,
+    "last_notice": "repairing",
     "last_action_at": "2026-10-16T02:34:56.122310+00:00",
     "last_action": "rerun",
     "run_id": 38841064433
