@@ -8,7 +8,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"failure\", 0, [\"Mirar: URLError\", \"カード抽選まとめ: URLError\"]]",
       "last_checked_at": "2026-10-18T15:30:42.084973+09:00"
     }
   }
