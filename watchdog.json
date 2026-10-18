@@ -1,13 +1,5 @@
 {
   "version": 1,
-  "incident": {
-    "started_at": "2026-10-18T06:30:56.342328+00:00",
-    "retries": 1,
-    "bootstrap_dispatched": false,
-    "last_notice": "repairing",
-    "last_action_at": "2026-10-18T06:30:56.342328+00:00",
-    "last_action": "rerun",
-    "run_id": 39104219456
-  },
+  "incident": null,
   "last_test_at": "2026-10-15T22:17:54.848546+00:00"
 }
