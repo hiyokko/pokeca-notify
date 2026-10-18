@@ -176,6 +176,13 @@ def post_index():
         time.sleep(0.5)
 
 
+def write_report(report):
+    path = Path('report.json')
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+    temp.replace(path)
+
+
 def run(args):
     store = StateStore(args.state, args.github_state)
     state = store.load()
@@ -266,6 +273,17 @@ def run(args):
             source_counts['トレトク公式ブログ'] = count
         except Exception as error:
             errors.append('トレトク公式ブログ: ' + safe_error(error))
+    report = {'checked_at': now.isoformat(), 'complete': False,
+              'run_id': os.environ.get('GITHUB_RUN_ID', ''),
+              'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
+              'delivered_notifications': 0, 'updated_articles': scanned,
+              'catalog_articles': len(state['posts']), 'source_offers': source_counts,
+              'toretoku_articles': toretoku_count,
+              'tracked_purchase_events': len(state.get('events', {})),
+              'product_urls': len(products), 'stock_unknown': unknown,
+              'notifications': len(pending), 'errors': errors,
+              'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。トレトクPSAオリパは公式の販売告知が対象で、在庫の直接確認はしません。'}
+    write_report(report)
     # Save observations first, but mark purchase events delivered only after the
     # webhook confirms receipt. A failed delivery is retried on the next run.
     if not args.dry_run:
@@ -277,18 +295,15 @@ def run(args):
                 print(record['event'], record['retailer'], record['title'])
         else:
             send_discord(batch, webhook)
+            report['delivered_notifications'] += len(batch)
+            write_report(report)
             for record in batch:
                 state['events'][record['key']] = record['after']
             store.save(state)
-    report = {'checked_at': now.isoformat(), 'updated_articles': scanned,
-              'catalog_articles': len(state['posts']), 'source_offers': source_counts,
-              'toretoku_articles': toretoku_count,
-              'tracked_purchase_events': len(state.get('events', {})),
-              'product_urls': len(products), 'stock_unknown': unknown,
-              'notifications': len(pending), 'errors': errors,
-              'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。トレトクPSAオリパは公式の販売告知が対象で、在庫の直接確認はしません。'}
+    report['complete'] = True
+    report['completed_at'] = datetime.now(JST).isoformat()
+    write_report(report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    Path('report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as file:
             file.write('## ポケカ日次チェック\n\n```json\n' + json.dumps(report, ensure_ascii=False, indent=2) + '\n```\n')

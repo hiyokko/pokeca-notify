@@ -41,13 +41,13 @@ def safe_error(error):
         return "HTTP {}".format(error.code)
     return type(error).__name__
 
-def send_discord(records, webhook):
+def send_discord(records, webhook, *, username="ポケカ watchdog", content="🛠️ ポケカ監視 watchdog"):
     if not re.fullmatch(r"https://(?:canary\.|ptb\.)?discord\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+", webhook):
         raise ValueError("DISCORD_WEBHOOK_URLの形式を確認してください")
-    payload = {"username": "ポケカ watchdog", "allowed_mentions": {"parse": []},
-               "content": "🛠️ ポケカ監視 watchdog",
+    payload = {"username": username, "allowed_mentions": {"parse": []},
+               "content": content,
                "embeds": [{"title": ("【" + r.get("event", "購入機会") + "】" + r["title"])[:220],
-                           "url": r["url"], "description": r.get("note", "")[:500],
+                           "url": r["url"], "description": r.get("note", "")[:3500],
                            "color": 16763904,
                            "footer": {"text": r.get("retailer", "") + " · " + r.get("source", "")}}
                           for r in records]}
