@@ -12,7 +12,7 @@
           "delivered": 0
         }
       },
-      "signature": "[\"failure\", 0, [\"Mirar: URLError\", \"カード抽選まとめ: URLError\"]]",
+      "signature": "[\"complete_limited\", 0, []]",
       "last_checked_at": "2026-10-18T15:31:29.435230+09:00"
     }
   }
