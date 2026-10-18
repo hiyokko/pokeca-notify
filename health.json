@@ -6,10 +6,14 @@
         "39104219456:1": {
           "detected": 0,
           "delivered": 0
+        },
+        "39104219456:2": {
+          "detected": 0,
+          "delivered": 0
         }
       },
       "signature": "[\"failure\", 0, [\"Mirar: URLError\", \"カード抽選まとめ: URLError\"]]",
-      "last_checked_at": "2026-10-18T15:30:42.084973+09:00"
+      "last_checked_at": "2026-10-18T15:31:29.435230+09:00"
     }
   }
 }
