@@ -33,6 +33,7 @@ jobs:
       - name: Test parsers and notification state
         run: python -m unittest discover -v
       - name: Check sources or send connection test
+        id: monitor
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -43,3 +44,10 @@ jobs:
           else
             python monitor.py --github-state
           fi
+      - name: Send daily health status to channel 2
+        if: ${{ always() && inputs.test_notification != true }}
+        env:
+          DISCORD_HEALTH_WEBHOOK_URL: ${{ secrets.DISCORD_HEALTH_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MONITOR_OUTCOME: ${{ steps.monitor.outcome }}
+        run: python health.py
