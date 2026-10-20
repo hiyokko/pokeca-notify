@@ -32,7 +32,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"complete_limited\", 0, []]",
       "last_checked_at": "2026-10-20T11:52:46.046124+09:00"
     }
   }
