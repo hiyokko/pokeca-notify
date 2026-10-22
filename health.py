@@ -94,21 +94,28 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
                      and report['notifications'] == report['delivered_notifications'])
     unknown = report.get('stock_unknown', 0) if report else 0
     statuses = report.get('source_status', {}) if report else {}
+    maintenance = bool(completed and any(v.get('status') == 'maintenance' for v in statuses.values()))
     source_failure = bool(report and report.get('complete') and errors and statuses
                           and outcome == 'failure'
                           and report['notifications'] == report['delivered_notifications'])
-    phase = 'source_failure' if source_failure else 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
+    phase = 'maintenance' if maintenance else 'source_failure' if source_failure else 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
     # Same-day reruns stay quiet unless health changes or further updates are delivered.
-    signature = json.dumps([phase, delivered, sorted(errors)], ensure_ascii=False)
+    signature_fields = [phase, delivered, sorted(errors)]
+    if maintenance:
+        signature_fields.append(sorted(name for name, value in statuses.items() if value.get('status') == 'maintenance'))
+    signature = json.dumps(signature_fields, ensure_ascii=False)
     should_send = entry.get('signature') != signature
     entry['signature'] = signature
     entry['last_checked_at'] = now.isoformat()
     # Bounded history, independent of both the purchase and watchdog state branches.
     cutoff = (now.astimezone(JST).date() - timedelta(days=30)).isoformat()
     after['days'] = {d: value for d, value in after['days'].items() if d >= cutoff}
-    label = '要確認・情報源の取得失敗' if source_failure else '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
+    label = '一部監視休止・公式メンテナンス中' if maintenance else '要確認・情報源の取得失敗' if source_failure else '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
     lines = ['確認完了: ' + now.astimezone(JST).strftime('%Y/%m/%d %H:%M JST')]
-    if completed:
+    if maintenance:
+        lines.append('公式メンテナンスにより一部の情報源を確認できません。全体の「更新なし」は未確認です。')
+        lines.append('他の情報源の監視は完了しました。通常の日次チェックで再開を確認します。')
+    elif completed:
         lines.append('今回の新規情報: {}件'.format(report['notifications']) if report['notifications'] else '今回: 確認できた範囲では新規情報なし')
     elif source_failure:
         lines.append('情報源の取得に失敗したため、全体の「更新なし」は未確認です。')
@@ -127,7 +134,8 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
                 if value['status'] != 'ok':
                     last = value.get('last_success_at')
                     suffix = datetime.fromisoformat(last).astimezone(JST).strftime('%m/%d %H:%M JST') if last else '記録なし'
-                    lines.append(name + ': 取得不可（最終成功: ' + suffix + '）')
+                    cause = '公式メンテナンス中' if value['status'] == 'maintenance' else '取得不可'
+                    lines.append(name + ': ' + cause + '（最終成功: ' + suffix + '）')
         else:
             lines.append('取得できた情報源: {}件 / ポケゲト記事: {}件 / トレトク記事: {}件'.format(
                 len(report['source_offers']), report.get('catalog_articles', 0), report.get('toretoku_articles', 0)))
@@ -138,10 +146,13 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
             lines.append('HTTP再試行: {}回 / 復旧したリクエスト: {}件'.format(retry_count, recovered_count))
         if report.get('retry_not_before'):
             target = datetime.fromisoformat(report['retry_not_before']).astimezone(JST)
-            lines.append('再取得可能時刻: ' + target.strftime('%m/%d %H:%M JST') + '以降（watchdogが再試行枠内で実行）')
+            suffix = '以降（次回の通常チェックで再確認）' if maintenance else '以降（watchdogが再試行枠内で実行）'
+            lines.append('再取得可能時刻: ' + target.strftime('%m/%d %H:%M JST') + suffix)
         lines.append('Amazon在庫: {}商品中{}商品が判定不能'.format(report['product_urls'], unknown))
         if report['notifications'] > report['delivered_notifications']:
             lines.append('今回未送信: {}件（次回再試行）'.format(report['notifications'] - report['delivered_notifications']))
+        if report.get('warnings'):
+            lines.append('監視休止: ' + '、'.join(str(w) for w in report['warnings'])[:900])
         if errors:
             lines.append('取得エラー: ' + '、'.join(str(e) for e in errors)[:900])
     else:

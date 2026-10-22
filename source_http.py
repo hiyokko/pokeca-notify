@@ -1,6 +1,8 @@
 """Bounded retries for public source GETs. Never retries Discord or GitHub writes."""
 import json
 import random
+import re
+from html import unescape
 import ssl
 import time
 from datetime import datetime, timedelta, timezone
@@ -17,6 +19,24 @@ class SourceDeferred(Exception):
     def __init__(self, retry_at):
         self.retry_at = retry_at
         super().__init__('source retry deferred')
+
+
+class SourceMaintenance(SourceDeferred):
+    """Explicit maintenance page, not a generic 503 or a guessed outage."""
+
+
+def maintenance_page(error):
+    if not isinstance(error, HTTPError) or error.code != 503 or error.fp is None:
+        return False
+    try:
+        body = error.read(16_384).decode('utf-8', 'replace')
+    except (OSError, ValueError, AttributeError):
+        return False
+    title = re.search(r'<title\b[^>]*>(.*?)</title>', body, re.I | re.S)
+    if not title:
+        return False
+    text = unescape(re.sub(r'<[^>]*>', '', title[1]))
+    return bool(re.search(r'(?:ただいま|只今|現在).*メンテナンス中', text))
 
 
 def retry_seconds(value, now):
@@ -42,13 +62,15 @@ def transient(error):
 
 
 def safe_reason(error):
+    if isinstance(error, SourceMaintenance):
+        return '公式メンテナンス中'
     if isinstance(error, SourceDeferred):
         return '再試行待機中'
     return 'HTTP {}'.format(error.code) if isinstance(error, HTTPError) else type(error).__name__
 
 
 class SourceFetcher:
-    def __init__(self, request, retry_after=None, *, clock=None, sleep=None, jitter=None):
+    def __init__(self, request, retry_after=None, *, clock=None, sleep=None, jitter=None, maintenance_hosts=None):
         self.request = request
         self.clock = clock or (lambda: datetime.now(UTC))
         self.sleep = sleep or time.sleep
@@ -60,6 +82,7 @@ class SourceFetcher:
                 raise ValueError('Invalid source retry time')
             if target > self.clock():
                 self.retry_after[host] = target.isoformat()
+        self.maintenance_hosts = set(maintenance_hosts or []) & self.retry_after.keys()
 
     def get(self, url):
         parsed = urlsplit(url)
@@ -71,8 +94,11 @@ class SourceFetcher:
         target = self.retry_after.get(host)
         if target and datetime.fromisoformat(target) > self.clock():
             stats['deferred_requests'] += 1
+            if host in self.maintenance_hosts:
+                raise SourceMaintenance(target)
             raise SourceDeferred(target)
         self.retry_after.pop(host, None)
+        self.maintenance_hosts.discard(host)
         for attempt in range(4):
             stats['attempts'] += 1
             try:
@@ -81,6 +107,15 @@ class SourceFetcher:
                     stats['recovered_requests'] += 1
                 return result
             except Exception as error:
+                if maintenance_page(error):
+                    delay = retry_seconds(error.headers.get('Retry-After'), self.clock())
+                    target = (self.clock() + timedelta(seconds=max(delay or 0, 60))).isoformat()
+                    if delay is None:
+                        target = (self.clock() + timedelta(hours=1)).isoformat()
+                    self.retry_after[host] = target
+                    self.maintenance_hosts.add(host)
+                    stats['maintenance_requests'] = stats.get('maintenance_requests', 0) + 1
+                    raise SourceMaintenance(target) from None
                 if not transient(error):
                     stats['failed_requests'] += 1
                     raise

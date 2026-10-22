@@ -19,7 +19,7 @@ from events import (JST, SOURCES, identity, pokeget_offers, mirar_offers,
 
 from toretoku import fetch_posts as toretoku_posts, plan_announcements
 
-from source_http import SourceFetcher, SourceDeferred, safe_reason
+from source_http import SourceFetcher, SourceDeferred, SourceMaintenance, safe_reason
 
 UA = "PokecaNotify/1.0 (+https://github.com/hiyokko/pokeca-notify)"
 
@@ -74,6 +74,8 @@ def validate_state(state):
     for name in ('source_retry_after', 'source_status', 'last_check', 'product_catalog'):
         if not isinstance(state.get(name, {}), dict):
             raise ValueError('情報源状態が破損しています')
+    if not isinstance(state.get('source_maintenance', []), list):
+        raise ValueError('メンテナンス状態が破損しています')
     return state
 
 
@@ -220,13 +222,13 @@ def run(args):
         print('接続テスト完了（dry-run: {}）'.format(args.dry_run))
         return 0
     now = datetime.now(JST)
-    fetcher = SourceFetcher(request, state.get('source_retry_after', {}))
-    errors, successful, offers, source_counts, statuses = [], [], [], {}, {}
+    fetcher = SourceFetcher(request, state.get('source_retry_after', {}), maintenance_hosts=state.get('source_maintenance', []))
+    errors, warnings, successful, offers, source_counts, statuses = [], [], [], [], {}, {}
     previous = state.get('source_status', {})
 
     def status(name, ok, count, articles=None, cached_articles=None, error=None):
         before = previous.get(name, {})
-        value = {'status': 'ok' if ok else 'failed', 'checked_at': now.isoformat(),
+        value = {'status': 'ok' if ok else 'maintenance' if isinstance(error, SourceMaintenance) else 'failed', 'checked_at': now.isoformat(),
                  'offers': count, 'last_success_at': now.isoformat() if ok else before.get('last_success_at')}
         if articles is not None:
             value['articles'] = articles
@@ -238,12 +240,16 @@ def run(args):
         if ok:
             source_counts[name] = count
 
+    def source_error(label, error):
+        target = warnings if isinstance(error, SourceMaintenance) else errors
+        target.append(label + ': ' + safe_reason(error))
+
     scanned, index_error = 0, None
     try:
         index = post_index(fetcher.json)
     except Exception as error:
         index_error = error
-        errors.append('ポケゲト記事一覧: ' + safe_error(error))
+        source_error('ポケゲト記事一覧', error)
         index = []
     pokeget_ok = bool(index)
     for meta in index:
@@ -260,7 +266,7 @@ def run(args):
             scanned += 1
         except Exception as error:
             pokeget_ok, index_error = False, error
-            errors.append('記事 {}: {}'.format(key, safe_error(error)))
+            source_error('記事 {}'.format(key), error)
         time.sleep(0.3)
     if pokeget_ok:
         successful.append('ポケゲトちゃんねる')
@@ -280,7 +286,7 @@ def run(args):
             status(name, True, len(found))
         except Exception as error:
             status(name, False, 0, error=error)
-            errors.append(name + ': ' + safe_error(error))
+            source_error(name, error)
     products = known_product_urls(state, offers)
     state['product_catalog'] = products
     unknown = 0
@@ -309,11 +315,12 @@ def run(args):
             status('トレトク公式ブログ', True, count, toretoku_count)
         except Exception as error:
             status('トレトク公式ブログ', False, 0, 0, error=error)
-            errors.append('トレトク公式ブログ: ' + safe_error(error))
+            source_error('トレトク公式ブログ', error)
     retry_times = [t for host, t in fetcher.retry_after.items()
                    if datetime.fromisoformat(t) > datetime.now(JST) and
-                   (fetcher.stats.get(host, {}).get('failed_requests') or fetcher.stats.get(host, {}).get('deferred_requests'))]
-    retry_at = max(retry_times, key=datetime.fromisoformat) if errors and retry_times else None
+                   (fetcher.stats.get(host, {}).get('failed_requests') or fetcher.stats.get(host, {}).get('deferred_requests') or host in fetcher.maintenance_hosts)]
+    retry_at = max(retry_times, key=datetime.fromisoformat) if (errors or warnings) and retry_times else None
+    maintenance_sources = [name for name, value in statuses.items() if value['status'] == 'maintenance']
     report = {'checked_at': now.isoformat(), 'complete': False,
               'run_id': os.environ.get('GITHUB_RUN_ID', ''),
               'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
@@ -323,11 +330,13 @@ def run(args):
               'retry_not_before': retry_at, 'toretoku_articles': toretoku_count,
               'tracked_purchase_events': len(state.get('events', {})),
               'product_urls': len(products), 'stock_unknown': unknown,
-              'notifications': len(pending), 'errors': errors,
+              'notifications': len(pending), 'errors': errors, 'warnings': warnings,
+              'maintenance_sources': maintenance_sources,
               'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。トレトクPSAオリパは公式の販売告知が対象で、在庫の直接確認はしません。'}
     state['source_retry_after'] = fetcher.retry_after
+    state['source_maintenance'] = sorted(fetcher.maintenance_hosts)
     state['source_status'] = statuses
-    state['last_check'] = {k: report[k] for k in ('run_id', 'run_attempt', 'checked_at', 'retry_not_before', 'errors')}
+    state['last_check'] = {k: report[k] for k in ('run_id', 'run_attempt', 'checked_at', 'retry_not_before', 'errors', 'warnings', 'maintenance_sources')}
     write_report(report)
     if not args.dry_run:
         store.save(state)

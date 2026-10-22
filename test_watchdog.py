@@ -167,5 +167,55 @@ class DeliveryAndApiTests(unittest.TestCase):
         self.client.api.side_effect = [error, {'ref':'heads/watchdog-state'}]
         with self.assertRaises(ValueError):WatchdogStore(self.client).load()
 
+
+class MaintenanceRecoveryTests(unittest.TestCase):
+    def test_successful_partial_maintenance_is_not_total_recovery(self):
+        result = assess(ACTIVE, [run()], fresh_watchdog(), NOW, 'current', maintenance_sources=['トレトク'])
+        self.assertEqual(result['phase'], 'maintenance')
+        self.assertNotIn('action', result)
+        self.assertIn('通常の日次チェック', result['reason'])
+
+    @patch('watchdog.send_discord')
+    def test_old_exhausted_incident_becomes_maintenance_notice_once(self, send):
+        client, store = Mock(), Mock(sha='existing')
+        state = fresh_watchdog()
+        state['incident'] = {'retries': 2, 'bootstrap_dispatched': False, 'last_notice': 'attention'}
+        args = (client, store, state, ACTIVE, [run()], NOW, 'current', 'main', REPO, 'health-webhook')
+        result = execute(*args, maintenance_sources=['トレトク'])
+        self.assertEqual(result['phase'], 'maintenance')
+        self.assertIsNone(state['incident'])
+        self.assertEqual(send.call_args.args[0][0]['event'], '一部監視休止')
+        execute(*args, maintenance_sources=['トレトク'])
+        self.assertEqual(send.call_count, 1)
+        client.api.assert_not_called()
+
+    @patch('watchdog.send_discord')
+    def test_real_source_recovery_after_maintenance_notified_once(self, send):
+        client, store = Mock(), Mock(sha='existing')
+        state = fresh_watchdog(); state['maintenance_sources'] = ['トレトク']
+        args = (client, store, state, ACTIVE, [run()], NOW, 'current', 'main', REPO, 'health-webhook')
+        execute(*args)
+        self.assertEqual(send.call_args.args[0][0]['event'], '復旧')
+        self.assertEqual(state['maintenance_sources'], [])
+        execute(*args)
+        self.assertEqual(send.call_count, 1)
+
+    def test_actual_failure_still_uses_bounded_retries(self):
+        state = fresh_watchdog()
+        state['incident'] = {'retries': 2, 'bootstrap_dispatched': False, 'last_notice': 'attention'}
+        result = assess(ACTIVE, [run(conclusion='failure')], state, NOW, 'current', maintenance_sources=['トレトク'])
+        self.assertEqual(result['phase'], 'attention')
+        self.assertNotIn('action', result)
+
+    @patch('watchdog.send_discord', side_effect=TimeoutError())
+    def test_maintenance_notice_failure_does_not_clear_incident(self, send):
+        client, store = Mock(), Mock(sha='existing')
+        state = fresh_watchdog()
+        state['incident'] = {'retries': 2, 'bootstrap_dispatched': False, 'last_notice': 'attention'}
+        with self.assertRaises(TimeoutError):
+            execute(client, store, state, ACTIVE, [run()], NOW, 'current', 'main', REPO, 'health-webhook', maintenance_sources=['トレトク'])
+        self.assertIsNotNone(state['incident'])
+        store.save.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()
