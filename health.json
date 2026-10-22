@@ -52,7 +52,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"failure\", 0, [\"トレトク公式ブログ: HTTP 503\", \"ポケゲト記事一覧: HTTP 502\"]]",
       "last_checked_at": "2026-10-22T11:45:14.820184+09:00"
     }
   }
