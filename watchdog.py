@@ -156,7 +156,7 @@ def due_time(now):
     return due if now >= due + GRACE else due - timedelta(days=1)
 
 
-def assess(workflow, runs, state, now, current_sha):
+def assess(workflow, runs, state, now, current_sha, retry_not_before=None):
     """Pure decision: changes only happen after a persisted action reservation."""
     incident = state.get('incident')
     if workflow.get('state') != 'active':
@@ -179,6 +179,9 @@ def assess(workflow, runs, state, now, current_sha):
     if latest and latest['conclusion'] != 'success':
         if incident and incident['retries'] >= MAX_RETRIES:
             return {'phase': 'attention', 'reason': '自動再試行2回でも復旧しませんでした。', 'run_id': latest['id']}
+        if retry_not_before and timestamp(retry_not_before) > now:
+            return {'phase': 'waiting', 'reason': '情報源が指定した再取得時刻まで待機します。',
+                    'retry_not_before': retry_not_before, 'run_id': latest['id']}
         action = 'rerun' if latest.get('head_sha') == current_sha else 'dispatch'
         return {'phase': 'repairing', 'action': action, 'retry': True,
                 'reason': '日次チェックが失敗したため自動再実行します。', 'run_id': latest['id']}
@@ -234,8 +237,8 @@ def fetch_runs(client, branch):
     return runs
 
 
-def execute(client, store, state, workflow, runs, now, sha, branch, repo, webhook, dry_run=False):
-    decision = assess(workflow, runs, state, now, sha)
+def execute(client, store, state, workflow, runs, now, sha, branch, repo, webhook, dry_run=False, retry_not_before=None):
+    decision = assess(workflow, runs, state, now, sha, retry_not_before)
     print(json.dumps(decision, ensure_ascii=False))
     if dry_run:
         return decision
@@ -261,6 +264,28 @@ def execute(client, store, state, workflow, runs, now, sha, branch, repo, webhoo
     if state != old or store.sha is None:
         store.save(state)
     return decision
+
+
+def source_retry_time(client, runs):
+    # Read only the report belonging to the failed run/attempt being assessed.
+    if not runs or runs[0].get('conclusion') not in {'failure', 'timed_out', 'startup_failure', 'stale'}:
+        return None
+    try:
+        result = client.api('/contents/state.json?ref=monitor-state')
+    except HTTPError as error:
+        if error.code == 404:
+            return None
+        raise
+    state = json.loads(base64.b64decode(result['content']))
+    report = state.get('last_check', {})
+    latest = runs[0]
+    if (str(report.get('run_id')) != str(latest['id']) or
+            str(report.get('run_attempt')) != str(latest.get('run_attempt', 1))):
+        return None
+    value = report.get('retry_not_before')
+    if value and datetime.fromisoformat(value).tzinfo is None:
+        raise ValueError('Invalid source retry time')
+    return value
 
 
 def main():
@@ -295,7 +320,8 @@ def main():
                 send_discord([notice('test', 'watchdogから通常チェックの再実行を要求しました。自動再実行の権限を確認するテストです。', repo, runs[0]['id'])], webhook)
             decision = {'phase': 'test', 'run_id': runs[0]['id']}
         else:
-            decision = execute(client, store, state, workflow, runs, now, sha, branch, repo, webhook, args.dry_run)
+            decision = execute(client, store, state, workflow, runs, now, sha, branch, repo, webhook, args.dry_run,
+                               retry_not_before=source_retry_time(client, runs))
         if os.environ.get('GITHUB_STEP_SUMMARY'):
             with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
                 f.write('## Watchdog\n\n```json\n' + json.dumps(decision, ensure_ascii=False, indent=2) + '\n```\n')

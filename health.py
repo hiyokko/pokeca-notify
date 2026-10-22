@@ -93,7 +93,11 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
     completed = bool(outcome == 'success' and report and report.get('complete') is True and not errors
                      and report['notifications'] == report['delivered_notifications'])
     unknown = report.get('stock_unknown', 0) if report else 0
-    phase = 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
+    statuses = report.get('source_status', {}) if report else {}
+    source_failure = bool(report and report.get('complete') and errors and statuses
+                          and outcome == 'failure'
+                          and report['notifications'] == report['delivered_notifications'])
+    phase = 'source_failure' if source_failure else 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
     # Same-day reruns stay quiet unless health changes or further updates are delivered.
     signature = json.dumps([phase, delivered, sorted(errors)], ensure_ascii=False)
     should_send = entry.get('signature') != signature
@@ -102,17 +106,39 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
     # Bounded history, independent of both the purchase and watchdog state branches.
     cutoff = (now.astimezone(JST).date() - timedelta(days=30)).isoformat()
     after['days'] = {d: value for d, value in after['days'].items() if d >= cutoff}
-    label = '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
+    label = '要確認・情報源の取得失敗' if source_failure else '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
     lines = ['確認完了: ' + now.astimezone(JST).strftime('%Y/%m/%d %H:%M JST')]
     if completed:
         lines.append('今回の新規情報: {}件'.format(report['notifications']) if report['notifications'] else '今回: 確認できた範囲では新規情報なし')
+    elif source_failure:
+        lines.append('情報源の取得に失敗したため、全体の「更新なし」は未確認です。')
     else:
         lines.append('処理が正常完了していないため「更新なし」とは判定できません。')
         lines.append('監視ステップ: ' + outcome)
     lines.append('本日①へ送信確認済み: {}件'.format(delivered))
     if report:
-        lines.append('取得できた情報源: {}件 / ポケゲト記事: {}件 / トレトク記事: {}件'.format(
-            len(report['source_offers']), report.get('catalog_articles', 0), report.get('toretoku_articles', 0)))
+        if statuses:
+            success_count = sum(v['status'] == 'ok' for v in statuses.values())
+            lines.append('今回取得成功: {} / {}情報源'.format(success_count, len(statuses)))
+            pokeget = statuses.get('ポケゲトちゃんねる', {})
+            lines.append('ポケゲト: 今回{}記事を確認 / 保存済み{}記事'.format(pokeget.get('articles', 0), report.get('catalog_articles', 0)))
+            lines.append('トレトク: 今回{}記事を取得'.format(report.get('toretoku_articles', 0)))
+            for name, value in statuses.items():
+                if value['status'] != 'ok':
+                    last = value.get('last_success_at')
+                    suffix = datetime.fromisoformat(last).astimezone(JST).strftime('%m/%d %H:%M JST') if last else '記録なし'
+                    lines.append(name + ': 取得不可（最終成功: ' + suffix + '）')
+        else:
+            lines.append('取得できた情報源: {}件 / ポケゲト記事: {}件 / トレトク記事: {}件'.format(
+                len(report['source_offers']), report.get('catalog_articles', 0), report.get('toretoku_articles', 0)))
+        retries = report.get('http_retries', {})
+        if retries:
+            retry_count = sum(v.get('retries', 0) for v in retries.values())
+            recovered_count = sum(v.get('recovered_requests', 0) for v in retries.values())
+            lines.append('HTTP再試行: {}回 / 復旧したリクエスト: {}件'.format(retry_count, recovered_count))
+        if report.get('retry_not_before'):
+            target = datetime.fromisoformat(report['retry_not_before']).astimezone(JST)
+            lines.append('再取得可能時刻: ' + target.strftime('%m/%d %H:%M JST') + '以降（watchdogが再試行枠内で実行）')
         lines.append('Amazon在庫: {}商品中{}商品が判定不能'.format(report['product_urls'], unknown))
         if report['notifications'] > report['delivered_notifications']:
             lines.append('今回未送信: {}件（次回再試行）'.format(report['notifications'] - report['delivered_notifications']))
