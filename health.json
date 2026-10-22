@@ -58,10 +58,14 @@
         "39714087728:1": {
           "detected": 0,
           "delivered": 0
+        },
+        "39714087728:2": {
+          "detected": 0,
+          "delivered": 0
         }
       },
       "signature": "[\"source_failure\", 0, [\"トレトク公式ブログ: HTTP 503\", \"ポケゲト記事一覧: HTTP 502\"]]",
-      "last_checked_at": "2026-10-22T11:56:56.974300+09:00"
+      "last_checked_at": "2026-10-22T16:35:09.977250+09:00"
     }
   }
 }
