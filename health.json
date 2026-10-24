@@ -80,6 +80,16 @@
       },
       "signature": "[\"complete_limited\", 0, []]",
       "last_checked_at": "2026-10-23T11:49:26.783967+09:00"
+    },
+    "2026-10-24": {
+      "attempts": {
+        "40055530718:1": {
+          "detected": 0,
+          "delivered": 0
+        }
+      },
+      "signature": null,
+      "last_checked_at": "2026-10-24T11:46:25.063636+09:00"
     }
   }
 }
