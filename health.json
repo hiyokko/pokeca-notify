@@ -98,7 +98,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"complete_limited\", 0, []]",
       "last_checked_at": "2026-10-25T11:36:55.745973+09:00"
     }
   }
