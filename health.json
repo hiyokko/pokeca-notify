@@ -132,7 +132,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"complete_limited\", 0, []]",
       "last_checked_at": "2026-10-28T11:37:04.066570+09:00"
     }
   }
