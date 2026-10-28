@@ -1,6 +1,14 @@
 {
   "version": 1,
-  "incident": null,
+  "incident": {
+    "started_at": "2026-10-28T02:36:34.649220+00:00",
+    "retries": 0,
+    "bootstrap_dispatched": true,
+    "last_notice": null,
+    "last_action_at": "2026-10-28T02:36:34.649220+00:00",
+    "last_action": "dispatch",
+    "run_id": null
+  },
   "last_test_at": "2026-10-15T22:17:54.848546+00:00",
   "maintenance_sources": []
 }
