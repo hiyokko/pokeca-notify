@@ -174,10 +174,14 @@
         "41270013734:1": {
           "detected": 0,
           "delivered": 0
+        },
+        "41270013734:2": {
+          "detected": 0,
+          "delivered": 0
         }
       },
       "signature": "[\"source_failure\", 0, [\"Mirar: URLError\"]]",
-      "last_checked_at": "2026-11-01T12:41:07.835279+09:00"
+      "last_checked_at": "2026-11-01T17:10:50.229422+09:00"
     }
   }
 }
