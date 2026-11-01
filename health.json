@@ -176,7 +176,7 @@
           "delivered": 0
         }
       },
-      "signature": null,
+      "signature": "[\"source_failure\", 0, [\"Mirar: URLError\"]]",
       "last_checked_at": "2026-11-01T12:41:07.835279+09:00"
     }
   }
