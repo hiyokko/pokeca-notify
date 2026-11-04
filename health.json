@@ -216,10 +216,14 @@
         "41766351139:1": {
           "detected": 0,
           "delivered": 0
+        },
+        "41772058127:1": {
+          "detected": 0,
+          "delivered": 0
         }
       },
       "signature": "[\"complete_limited\", 0, []]",
-      "last_checked_at": "2026-11-04T12:19:32.052228+09:00"
+      "last_checked_at": "2026-11-04T13:15:33.789335+09:00"
     }
   }
 }
