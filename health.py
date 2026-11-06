@@ -94,13 +94,16 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
                      and report['notifications'] == report['delivered_notifications'])
     unknown = report.get('stock_unknown', 0) if report else 0
     statuses = report.get('source_status', {}) if report else {}
+    unresolved = report.get('lottery_unresolved', []) if report else []
     maintenance = bool(completed and any(v.get('status') == 'maintenance' for v in statuses.values()))
     source_failure = bool(report and report.get('complete') and errors and statuses
                           and outcome == 'failure'
                           and report['notifications'] == report['delivered_notifications'])
-    phase = 'maintenance' if maintenance else 'source_failure' if source_failure else 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
+    phase = 'lottery_uncertain' if completed and unresolved and not maintenance else 'maintenance' if maintenance else 'source_failure' if source_failure else 'complete_limited' if completed and unknown else 'complete' if completed else 'failure'
     # Same-day reruns stay quiet unless health changes or further updates are delivered.
     signature_fields = [phase, delivered, sorted(errors)]
+    if unresolved:
+        signature_fields.append(sorted((x['retailer'], x['title'], x['reason']) for x in unresolved))
     if maintenance:
         signature_fields.append(sorted(name for name, value in statuses.items() if value.get('status') == 'maintenance'))
     signature = json.dumps(signature_fields, ensure_ascii=False)
@@ -110,11 +113,13 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
     # Bounded history, independent of both the purchase and watchdog state branches.
     cutoff = (now.astimezone(JST).date() - timedelta(days=30)).isoformat()
     after['days'] = {d: value for d, value in after['days'].items() if d >= cutoff}
-    label = '一部監視休止・公式メンテナンス中' if maintenance else '要確認・情報源の取得失敗' if source_failure else '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
+    label = '確認不足・抽選期間の未確定情報あり' if phase == 'lottery_uncertain' else '一部監視休止・公式メンテナンス中' if maintenance else '要確認・情報源の取得失敗' if source_failure else '正常終了（在庫判定に一部制限）' if phase == 'complete_limited' else '正常終了' if completed else '要確認・処理エラー'
     lines = ['確認完了: ' + now.astimezone(JST).strftime('%Y/%m/%d %H:%M JST')]
     if maintenance:
         lines.append('公式メンテナンスにより一部の情報源を確認できません。全体の「更新なし」は未確認です。')
         lines.append('他の情報源の監視は完了しました。通常の日次チェックで再開を確認します。')
+    elif phase == 'lottery_uncertain':
+        lines.append('抽選期間の未確定情報があるため、全体の「新規情報なし」は未確認です。')
     elif completed:
         lines.append('今回の新規情報: {}件'.format(report['notifications']) if report['notifications'] else '今回: 確認できた範囲では新規情報なし')
     elif source_failure:
@@ -139,6 +144,10 @@ def plan_health(state, report, outcome, now, repo, run_id, attempt):
         else:
             lines.append('取得できた情報源: {}件 / ポケゲト記事: {}件 / トレトク記事: {}件'.format(
                 len(report['source_offers']), report.get('catalog_articles', 0), report.get('toretoku_articles', 0)))
+        if unresolved:
+            lines.append('抽選期間・受付状態の未確定: {}件'.format(len(unresolved)))
+            for item in unresolved[:5]:
+                lines.append(item['retailer'] + ' / ' + item['title'] + ': ' + item['reason'])
         retries = report.get('http_retries', {})
         if retries:
             retry_count = sum(v.get('retries', 0) for v in retries.values())

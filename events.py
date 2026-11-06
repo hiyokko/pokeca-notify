@@ -6,6 +6,7 @@ from htmltools import Tree, clean, table_rows
 from adapters import canonical_product, product_kind, fingerprint, SITE
 
 JST = timezone(timedelta(hours=9))
+PARSER_VERSION = 2
 SOURCES = {
     'board': ('ポケカ抽選ボード', 'https://chusen-board.com/'),
     'mirar': ('Mirar', 'https://otoku-mirar.com/amazon-pokemon-card-request-sell'),
@@ -57,6 +58,8 @@ def date_range(text, year=None):
 
 
 def at_time(offer, now):
+    if offer.get('tentative') or offer.get('calendar_error') or offer.get('legacy_unverified'):
+        return 'unknown'
     if offer['status'] == 'closed':
         return 'closed'
     start = datetime.fromisoformat(offer['start']) if offer.get('start') else None
@@ -65,6 +68,10 @@ def at_time(offer, now):
         return 'closed'
     if start and now < start:
         return 'scheduled'
+    if start and offer.get('start_precision') == 'day' and now.date() == start.date() and offer['status'] != 'open':
+        return 'unknown'
+    if not start and end and offer.get('application_deadline') and offer['status'] != 'open':
+        return 'deadline_known'
     # A dated lottery with no deadline could have ended silently. Require an
     # explicit current status; a historical '6/2〜' alone is not proof of open.
     if start and end:
@@ -87,18 +94,22 @@ def pokeget_offers(post):
     # year, which could turn an old round into a current round.
     years = re.findall(r'20\d{2}', ' '.join(v for k, v in specs if k == '発売日'))
     year = int(years[0]) if len(set(years)) == 1 else None
-    retailer, level, offers = None, 0, []
+    catalog['release_year'] = year
+    retailer, level, offers, round_label = None, 0, [], ''
     for node in root.walk():
         if re.fullmatch('h[1-6]', node.tag):
             nlevel = int(node.tag[1])
             if retailer and nlevel <= level:
                 retailer = None
+                round_label = ''
             if nlevel in (2, 3):
                 text = node.text()
                 if 'ポケモンセンターオンライン' in text:
                     retailer, level = 'ポケモンセンターオンライン', nlevel
                 elif 'Amazon' in text:
                     retailer, level = 'Amazon', nlevel
+            if retailer and nlevel > level:
+                round_label = node.text() if re.search(r'\d+回目|追加|再抽選', node.text()) else ''
         if node.tag != 'table' or not retailer:
             continue
         rows = dict(table_rows(node))
@@ -109,7 +120,7 @@ def pokeget_offers(post):
         quantity = rows.get('販売数量', '') + rows.get('購入制限', '')
         if ('パック' in quantity and not re.search('BOX|ボックス', quantity, re.I)) or re.search('箱なし|箱無し', quantity):
             continue
-        period = rows.get('受付期間', rows.get('販売期間', ''))
+        period = next((rows[k] for k in ('応募受付期間', '抽選応募期間', '申込受付期間', '受付期間') if k in rows), '') if mode == 'lottery' else rows.get('販売期間', '')
         start, end = date_range(period, year)
         status_text = rows.get('販売状況', '')
         status = 'closed' if re.search('終了|売り切れ|在庫なし|在庫切れ', status_text + period) else 'open' if re.search('受付中|販売中|在庫あり', status_text) else 'unknown'
@@ -117,8 +128,16 @@ def pokeget_offers(post):
         urls = [canonical_product(u) for u in links]
         urls = [u for u in urls if u and (('amazon.co.jp' in u) == (retailer == 'Amazon'))]
         official = next((u for u in links if urlsplit(u).hostname in {'www.pokemoncenter-online.com', 'www.support.pokemoncenter-online.com'}), '')
-        offers.append(observation(title, retailer, mode, 'ポケゲトちゃんねる', post['link'],
-                                  urls[0] if urls else official, status, start, end, period=period))
+        item = observation(title, retailer, mode, 'ポケゲトちゃんねる', post['link'],
+                           urls[0] if urls else official, status, start, end, period=period)
+        item['round_label'] = round_label
+        item['tentative'] = bool(re.search('予想|見込み|未定', period))
+        item['application_deadline'] = bool(mode == 'lottery' and period and end and not start)
+        weekdays = re.findall(r'\d{1,2}月\d{1,2}日\(([月火水木金土日])\)', period)
+        parsed = [datetime.fromisoformat(d) for d in (start, end) if d]
+        item['calendar_error'] = bool(weekdays and (len(weekdays) != len(parsed) or any('月火水木金土日'[d.weekday()] != day for d, day in zip(parsed, weekdays))))
+        item['start_precision'] = 'minute' if re.search(r'\d{1,2}(?:時|:)', re.split('[~〜～]', period, maxsplit=1)[0]) else 'day'
+        offers.append(item)
     return offers, catalog
 
 
@@ -194,7 +213,7 @@ def cardchusen_offers(html, known):
 
 
 def plan_events(state, offers, now, successful_sources):
-    """Return notifications and their commit states. Failed deliveries stay pending."""
+    """Notify each eligible round once, including first discovery during its window."""
     tracked = state.setdefault('events', {})
     initialized = set(state.setdefault('initialized_sources', []))
     aliases = {}
@@ -205,57 +224,96 @@ def plan_events(state, offers, now, successful_sources):
     grouped = {}
     for offer in offers:
         o = dict(offer)
-        alias_key = (o['retailer'], o['product'])
-        if alias_key in aliases:
-            o['url'] = aliases[alias_key]
+        if not o.get('direct'):
+            o['url'] = aliases.get((o['retailer'], o['product']), o['url'])
         key = '{}:{}:{}'.format(o['retailer'], o['product'], o['kind'])
         grouped.setdefault(key, []).append(o)
-    pending = []
+    pending, unresolved = [], []
     for key, group in grouped.items():
-        # A direct check outranks all summaries. Unknown does not change state.
-        definite = [o for o in group if at_time(o, now) != 'unknown']
+        old = tracked.get(key)
+        definite = [o for o in group if at_time(o, now) not in {'unknown', 'deadline_known'}]
         direct = [o for o in definite if o.get('direct')]
         if direct:
             definite = direct
-        if not definite:
-            continue
         opened = [o for o in definite if at_time(o, now) == 'open']
-        # Undated summary lists need two agreeing sources. A dated interval or
-        # retailer page is sufficient. Avoid single stale list reopening a sale.
         qualified = [o for o in opened if o.get('direct') or (o.get('start') and o.get('end'))]
         if not qualified and len({o['source'] for o in opened}) >= 2:
             qualified = opened
-        if opened and not qualified:
+        deadlines = [o for o in group if at_time(o, now) == 'deadline_known']
+        # A full official interval, even when scheduled/closed, outranks all summaries.
+        chosen = None
+        if direct:
+            chosen = max(direct, key=lambda o: (at_time(o, now) == 'open', o.get('start') or ''))
+        elif qualified:
+            chosen = max(qualified, key=lambda o: o.get('start') or '')
+        elif deadlines:
+            chosen = max(deadlines, key=lambda o: o['end'])
+        elif definite and not opened:
+            chosen = max(definite, key=lambda o: (at_time(o, now) == 'scheduled', o.get('start') or ''))
+        if chosen is None:
+            if any(o['kind'] == 'lottery' and (not o.get('end') or datetime.fromisoformat(o['end']) >= now) for o in group):
+                unresolved.append({'title': group[0]['title'], 'retailer': group[0]['retailer'],
+                                   'reason': '日付と曜日が一致せず年を確定できません' if any(o.get('calendar_error') for o in group) else '応募期間・受付状態を確定できません', 'source_url': group[0]['source_url']})
             continue
-        choices = qualified or definite
-        chosen = max(choices, key=lambda o: (at_time(o, now) == 'open', o.get('start') or ''))
+        chosen = dict(chosen)
+        # Carry round names from the matching summary without altering product identity.
+        if not chosen.get('round_label'):
+            chosen['round_label'] = next((o.get('round_label', '') for o in group
+                                          if o.get('end') == chosen.get('end') and o.get('round_label')), '')
         status = at_time(chosen, now)
-        old = tracked.get(key)
-        after = dict(status=status, start=chosen.get('start'), end=chosen.get('end'),
-                     title=chosen['title'], last_observed=now.isoformat())
         active_sources = {o['source'] for o in qualified}
-        # Adding a new source is not a purchase event. Baseline its old listings.
-        established = bool(active_sources & initialized)
-        new_round = bool(old and old.get('end') and chosen.get('start') and
-                         chosen['start'] > old['end'] and chosen['start'] != old.get('start'))
-        opening = status == 'open' and established and (
+        established = bool((active_sources or {chosen['source']}) & initialized)
+        is_deadline = status == 'deadline_known'
+        new_round = bool(old and old.get('end') and chosen.get('start') and chosen['start'] > old['end'])
+        delivered_end = old.get('notified_end') if old else None
+        if old and not delivered_end and (old.get('notified') or old.get('status') == 'open'):
+            delivered_end = old.get('end')
+        same_delivered_round = bool(delivered_end and delivered_end == chosen.get('end'))
+        if delivered_end and chosen.get('start') and chosen['start'] > delivered_end:
+            new_round = True
+        opening = status == 'open' and not same_delivered_round and (
             (old and (old['status'] == 'scheduled' or new_round or
-                      (old['status'] == 'closed' and not chosen.get('start')))) or
-            (not old and (chosen.get('direct') or len(active_sources & initialized) >= 2 or
-                          (chosen.get('start') and datetime.fromisoformat(chosen['start']) > datetime.fromisoformat(state['started_at']).replace(tzinfo=timezone.utc))))
+                      (old['status'] == 'closed' and not chosen.get('start')) or
+                      (old['status'] in {'unknown', 'deadline_known'} and not delivered_end and not old.get('notified')))) or
+            (not old and (chosen.get('direct') or
+                          (established and (len(active_sources & initialized) >= 2 or
+                           (chosen.get('start') and datetime.fromisoformat(chosen['start']) >
+                            datetime.fromisoformat(state['started_at']).replace(tzinfo=timezone.utc))))))
         )
-        # An unseen available product is not proof of restocking.
         if chosen['kind'] == 'sale' and not old and not chosen.get('start'):
             opening = False
-        if opening:
-            event = '抽選開始' if chosen['kind'] == 'lottery' else '再販・在庫復活'
-            sources = sorted({o['source'] for o in qualified})
-            period = ('\n受付: ' + chosen['period']) if chosen.get('period') else ''
-            evidence = '販売店ページで確認' if chosen.get('direct') else '掲載情報: ' + '、'.join(sources)
-            note = evidence + period + '\n[情報元](' + chosen['source_url'] + ')\n販売単位・受付状況はリンク先で確認してください。'
-            pending.append(dict(chosen, key=key, event=event, note=note, after=after,
-                                source='、'.join(sources)))
+        deadline_notice = is_deadline and established and not same_delivered_round and (
+            not old or (not old.get('baseline') and not old.get('notified') and not delivered_end) or
+            (old.get('end') and chosen['end'] > old['end'] and old.get('status') == 'closed' and
+             chosen.get('round_label') and chosen.get('round_label') != old.get('round_label')))
+        after = dict(status=status, start=chosen.get('start'), end=chosen.get('end'),
+                     title=chosen['title'], last_observed=now.isoformat(),
+                     notified=bool(same_delivered_round), notified_end=delivered_end,
+                     round_label=chosen.get('round_label', ''), source=chosen['source'],
+                     source_url=chosen['source_url'], period=chosen.get('period', ''),
+                     first_seen_at=old.get('first_seen_at', now.isoformat()) if old else now.isoformat())
+        if opening or deadline_notice:
+            event = '抽選受付情報' if deadline_notice else '抽選開始' if chosen['kind'] == 'lottery' else '再販・在庫復活'
+            sources = sorted({chosen['source']} if chosen.get('direct') or deadline_notice else active_sources)
+            if deadline_notice:
+                period = '受付期限: ' + datetime.fromisoformat(chosen['end']).astimezone(JST).strftime('%Y/%m/%d %H:%M JST') + '（開始日時未確認）'
+            elif chosen.get('start') and chosen.get('end'):
+                period = '応募受付: ' + datetime.fromisoformat(chosen['start']).astimezone(JST).strftime('%Y/%m/%d %H:%M') + '〜' + datetime.fromisoformat(chosen['end']).astimezone(JST).strftime('%Y/%m/%d %H:%M JST')
+            else:
+                period = '受付: ' + chosen.get('period', '受付中の掲載を確認')
+            evidence = '公式の応募受付期間を確認' if chosen.get('direct') and chosen['kind'] == 'lottery' else '販売店ページで確認' if chosen.get('direct') else '掲載情報: ' + '、'.join(sources)
+            note = evidence + '\n' + period
+            if chosen.get('round_label'):
+                note += '\n受付回: ' + chosen['round_label']
+            note += '\n[情報元](' + chosen['source_url'] + ')\n販売単位・受付状況はリンク先で確認してください。'
+            after['notified'] = True
+            after['notified_end'] = chosen.get('end')
+            display_title = chosen['title'] + ('（' + chosen['round_label'] + '）' if chosen.get('round_label') else '')
+            pending.append(dict(chosen, title=display_title, key=key, event=event, note=note, after=after, source='、'.join(sources)))
         else:
+            if not old and status in {'open', 'deadline_known'} and not established and not chosen.get('direct'):
+                after['baseline'] = True
             tracked[key] = after
+    state['lottery_unresolved'] = unresolved
     state['initialized_sources'] = sorted(initialized | set(successful_sources))
     return pending

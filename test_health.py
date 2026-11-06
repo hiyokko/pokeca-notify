@@ -131,7 +131,7 @@ class MonitorReportingTests(unittest.TestCase):
                 os.chdir(folder)
                 Path('config.json').write_text('{}')
                 state = fresh_state()
-                state['posts']['1'] = {'title': 'test BOX', 'kind': 'box', 'offers': [], 'modified': 'x'}
+                state['posts']['1'] = {'title': 'test BOX', 'kind': 'box', 'offers': [], 'modified': 'x', 'parser_version': 2}
                 store = Mock()
                 store.load.return_value = state
                 store.save.side_effect = [None, TimeoutError()]

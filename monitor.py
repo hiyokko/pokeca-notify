@@ -14,10 +14,11 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from adapters import SITE, stock_status, canonical_product
-from events import (JST, SOURCES, identity, pokeget_offers, mirar_offers,
+from events import (JST, SOURCES, PARSER_VERSION, identity, pokeget_offers, mirar_offers,
                     board_offers, cardchusen_offers, observation, plan_events)
 
 from toretoku import fetch_posts as toretoku_posts, plan_announcements
+from pco import fetch_offers as pco_offers, SOURCE as PCO_SOURCE
 
 from source_http import SourceFetcher, SourceDeferred, SourceMaintenance, safe_reason
 
@@ -206,6 +207,33 @@ def known_product_urls(state, offers):
     return products
 
 
+def legacy_catalog(cached):
+    """Retain catalog years already derived from product specs; never use today's year."""
+    result = dict(cached)
+    if 'release_year' not in result:
+        years = {datetime.fromisoformat(o[k]).year for o in cached.get('offers', [])
+                 for k in ('start', 'end') if o.get(k)}
+        result['release_year'] = next(iter(years)) if len(years) == 1 else None
+    return result
+
+
+def parser_refresh_ids(index, state, now, limit=5):
+    """Bound parser migrations; new/changed articles still refresh immediately."""
+    candidates = []
+    for meta in index:
+        key = str(meta['id'])
+        cached = state['posts'].get(key)
+        if not cached or cached.get('modified') != meta['modified_gmt'] or 'offers' not in cached or cached.get('parser_version') == PARSER_VERSION:
+            continue
+        active = [o for o in cached['offers'] if not o.get('end') or datetime.fromisoformat(o['end']) >= now]
+        priority = 0 if any(o['retailer'] == 'ポケモンセンターオンライン' for o in active) else 1 if active else 2
+        candidates.append((priority, meta['modified_gmt'], key))
+    # Current candidates first, newest within each priority; deterministic across runs.
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    candidates.sort(key=lambda item: item[0])
+    return {item[2] for item in candidates[:limit]}
+
+
 def run(args):
     store = StateStore(args.state, args.github_state)
     state = store.load()
@@ -252,16 +280,23 @@ def run(args):
         source_error('ポケゲト記事一覧', error)
         index = []
     pokeget_ok = bool(index)
+    parser_refresh = parser_refresh_ids(index, state, now)
     for meta in index:
         key = str(meta['id'])
         cached = state['posts'].get(key)
-        if cached and cached.get('modified') == meta['modified_gmt'] and 'offers' in cached:
-            offers.extend(cached['offers'])
+        if cached and cached.get('modified') == meta['modified_gmt'] and 'offers' in cached and key not in parser_refresh:
+            if cached.get('parser_version') != PARSER_VERSION:
+                # Old bodies lack row semantics/precision: retain discovery, not votes.
+                cached = legacy_catalog(cached)
+                state['posts'][key] = cached
+                offers.extend(dict(o, legacy_unverified=True) for o in cached['offers'])
+            else:
+                offers.extend(cached['offers'])
             continue
         try:
             post, _ = fetcher.json(SITE + '/wp-json/wp/v2/posts/{}?_fields=id,link,title,content,modified_gmt'.format(meta['id']))
             found, catalog = pokeget_offers(post)
-            state['posts'][key] = {**catalog, 'modified': meta['modified_gmt'], 'offers': found}
+            state['posts'][key] = {**catalog, 'modified': meta['modified_gmt'], 'offers': found, 'parser_version': PARSER_VERSION}
             offers.extend(found)
             scanned += 1
         except Exception as error:
@@ -287,6 +322,19 @@ def run(args):
         except Exception as error:
             status(name, False, 0, error=error)
             source_error(name, error)
+    official_issues = []
+    if config.get('check_pokemoncenter_lottery', False):
+        try:
+            found, official_issues = pco_offers(fetcher.get, list(state['posts'].values()), now)
+            offers.extend(found)
+            status(PCO_SOURCE, not official_issues, len(found))
+            if official_issues:
+                errors.append(PCO_SOURCE + ': 一部の応募期間を確認できません')
+            else:
+                successful.append(PCO_SOURCE)
+        except Exception as error:
+            status(PCO_SOURCE, False, 0, error=error)
+            source_error(PCO_SOURCE, error)
     products = known_product_urls(state, offers)
     state['product_catalog'] = products
     unknown = 0
@@ -305,6 +353,7 @@ def run(args):
                 successful.append('Amazon公式')
             time.sleep(0.5)
     pending = plan_events(state, offers, now, successful)
+    state.setdefault('lottery_unresolved', []).extend(official_issues)
     toretoku_count = 0
     if config.get('check_toretoku_psa_oripa', False):
         try:
@@ -325,13 +374,16 @@ def run(args):
               'run_id': os.environ.get('GITHUB_RUN_ID', ''),
               'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
               'delivered_notifications': 0, 'updated_articles': scanned,
-              'catalog_articles': len(state['posts']), 'source_offers': source_counts,
+              'catalog_articles': len(state['posts']),
+              'parser_migration_remaining': sum(p.get('parser_version') != PARSER_VERSION for p in state['posts'].values()),
+              'source_offers': source_counts,
               'source_status': statuses, 'http_retries': fetcher.stats,
               'retry_not_before': retry_at, 'toretoku_articles': toretoku_count,
               'tracked_purchase_events': len(state.get('events', {})),
               'product_urls': len(products), 'stock_unknown': unknown,
               'notifications': len(pending), 'errors': errors, 'warnings': warnings,
               'maintenance_sources': maintenance_sources,
+              'lottery_unresolved': state.get('lottery_unresolved', []),
               'limits': '記事更新は通知しません。期間・販売状態を判定できたBOXのみ。全商品や短時間在庫は網羅しません。ポケセン在庫の直接確認は未対応。トレトクPSAオリパは公式の販売告知が対象で、在庫の直接確認はしません。'}
     state['source_retry_after'] = fetcher.retry_after
     state['source_maintenance'] = sorted(fetcher.maintenance_hosts)

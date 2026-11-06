@@ -77,7 +77,7 @@ class MaintenanceReportingTests(unittest.TestCase):
                 os.chdir(folder)
                 Path('config.json').write_text(json.dumps({'check_toretoku_psa_oripa': True}))
                 state = fresh_state()
-                state['posts']['1'] = {'title': 'テストBOX', 'kind': 'box', 'modified': 'x', 'offers': []}
+                state['posts']['1'] = {'title': 'テストBOX', 'kind': 'box', 'modified': 'x', 'offers': [], 'parser_version': 2}
                 store = Mock(); store.load.return_value = state
                 index = Mock(return_value=[{'id': 1, 'modified_gmt': 'x'}])
                 if index_failure:
