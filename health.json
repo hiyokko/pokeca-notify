@@ -244,10 +244,14 @@
         "42163085466:1": {
           "detected": 0,
           "delivered": 0
+        },
+        "42190058983:1": {
+          "detected": 0,
+          "delivered": 0
         }
       },
       "signature": "[\"complete_limited\", 1, []]",
-      "last_checked_at": "2026-11-06T13:32:36.759728+09:00"
+      "last_checked_at": "2026-11-06T17:46:50.021182+09:00"
     }
   }
 }
