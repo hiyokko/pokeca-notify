@@ -4,7 +4,7 @@
     "started_at": "2026-11-06T02:55:13.462678+00:00",
     "retries": 0,
     "bootstrap_dispatched": true,
-    "last_notice": null,
+    "last_notice": "repairing",
     "last_action_at": "2026-11-06T02:55:13.462678+00:00",
     "last_action": "dispatch",
     "run_id": null
