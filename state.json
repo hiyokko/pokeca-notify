@@ -8,7 +8,7 @@
       "kind": "review",
       "modified": "2026-10-13T23:46:52",
       "offers": [],
-      "release_year": null
+      "parser_version": 2
     },
     "45078": {
       "title": "『30th CELEBRATION プレミアムデッキセット エーフィ・ブラッキー』",
@@ -16,7 +16,7 @@
       "kind": "review",
       "modified": "2026-09-15T02:07:19",
       "offers": [],
-      "release_year": null
+      "parser_version": 2
     },
     "43866": {
       "title": "拡張パック『30th CELEBRATION』",
@@ -172,6 +172,7 @@
       "title": "拡張パック『アビスアイ』",
       "url": "https://pokemon-infomation.com/latest-information-abysseye/",
       "kind": "box",
+      "release_year": 2026,
       "modified": "2026-06-10T01:22:30",
       "offers": [
         {
@@ -186,7 +187,12 @@
           "start": "2026-04-20T14:00:00+09:00",
           "end": null,
           "direct": false,
-          "period": "4月20日(月)14時~"
+          "period": "4月20日(月)14時~",
+          "round_label": "",
+          "tentative": false,
+          "application_deadline": false,
+          "calendar_error": false,
+          "start_precision": "minute"
         },
         {
           "title": "拡張パック『アビスアイ』",
@@ -200,15 +206,21 @@
           "start": null,
           "end": "2026-04-20T16:59:00+09:00",
           "direct": false,
-          "period": "4月20日(月)16時59分まで"
+          "period": "4月20日(月)16時59分まで",
+          "round_label": "",
+          "tentative": false,
+          "application_deadline": true,
+          "calendar_error": false,
+          "start_precision": "minute"
         }
       ],
-      "release_year": 2026
+      "parser_version": 2
     },
     "43213": {
       "title": "拡張パック『ニンジャスピナー』",
       "url": "https://pokemon-infomation.com/latest-information-ninjaspiner/",
       "kind": "box",
+      "release_year": 2026,
       "modified": "2026-06-03T02:25:13",
       "offers": [
         {
@@ -223,7 +235,12 @@
           "start": "2026-02-16T14:00:00+09:00",
           "end": null,
           "direct": false,
-          "period": "2月16日(月)14時00分~"
+          "period": "2月16日(月)14時00分~",
+          "round_label": "",
+          "tentative": false,
+          "application_deadline": false,
+          "calendar_error": false,
+          "start_precision": "minute"
         },
         {
           "title": "拡張パック『ニンジャスピナー』",
@@ -237,10 +254,15 @@
           "start": null,
           "end": "2026-02-17T16:59:00+09:00",
           "direct": false,
-          "period": "2月17日(火)16時59分まで"
+          "period": "2月17日(火)16時59分まで",
+          "round_label": "",
+          "tentative": false,
+          "application_deadline": true,
+          "calendar_error": false,
+          "start_precision": "minute"
         }
       ],
-      "release_year": 2026
+      "parser_version": 2
     },
     "17175": {
       "title": "【2026年最新】ポケモンカードの再販いつ? 再販情報/再販予定/販売店舗まとめ【ポケカ】",
@@ -719,6 +741,7 @@
       "title": "ポケモンカードゲーム スカーレット&バイオレット 拡張パック『ステラミラクル』",
       "url": "https://pokemon-infomation.com/latest-information-stellamiracle/",
       "kind": "box",
+      "release_year": 2024,
       "modified": "2024-07-17T06:11:20",
       "offers": [
         {
@@ -733,10 +756,15 @@
           "start": null,
           "end": null,
           "direct": false,
-          "period": ""
+          "period": "",
+          "round_label": "",
+          "tentative": false,
+          "application_deadline": false,
+          "calendar_error": false,
+          "start_precision": "day"
         }
       ],
-      "release_year": null
+      "parser_version": 2
     },
     "14592": {
       "title": "再販時期",
@@ -1134,7 +1162,7 @@
       "start": null,
       "end": null,
       "title": "30th CELEBRATION BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1148,7 +1176,7 @@
       "start": "2026-09-11T16:00:00+09:00",
       "end": "2026-09-16T16:59:00+09:00",
       "title": "拡張パック『30th CELEBRATION』",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "第3回目",
@@ -1169,7 +1197,7 @@
       "start": null,
       "end": "2026-06-29T16:59:00+09:00",
       "title": "拡張パック『ストームエメラルダ』",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1190,7 +1218,14 @@
       "start": null,
       "end": "2026-04-20T16:59:00+09:00",
       "title": "拡張パック『アビスアイ』",
-      "last_observed": "2026-11-06T13:32:19.303085+09:00"
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
+      "notified": false,
+      "notified_end": null,
+      "round_label": "",
+      "source": "ポケゲトちゃんねる",
+      "source_url": "https://pokemon-infomation.com/latest-information-abysseye/",
+      "period": "4月20日(月)16時59分まで",
+      "first_seen_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "Amazon:ニンジャスピナー:lottery": {
       "status": "open",
@@ -1204,7 +1239,14 @@
       "start": null,
       "end": "2026-02-17T16:59:00+09:00",
       "title": "拡張パック『ニンジャスピナー』",
-      "last_observed": "2026-11-06T13:32:19.303085+09:00"
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
+      "notified": false,
+      "notified_end": null,
+      "round_label": "",
+      "source": "ポケゲトちゃんねる",
+      "source_url": "https://pokemon-infomation.com/latest-information-ninjaspiner/",
+      "period": "2月17日(火)16時59分まで",
+      "first_seen_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "ポケモンセンターオンライン:インフェルノx:lottery": {
       "status": "closed",
@@ -1218,7 +1260,7 @@
       "start": null,
       "end": null,
       "title": "ムニキスゼロ BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1239,7 +1281,7 @@
       "start": null,
       "end": null,
       "title": "MEGAドリームex BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1253,7 +1295,7 @@
       "start": null,
       "end": null,
       "title": "インフェルノX BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1267,7 +1309,7 @@
       "start": null,
       "end": null,
       "title": "メガブレイブ BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1281,7 +1323,7 @@
       "start": null,
       "end": null,
       "title": "ホワイトフレア BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1295,7 +1337,7 @@
       "start": null,
       "end": null,
       "title": "ロケット団の栄光 BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1309,7 +1351,7 @@
       "start": null,
       "end": null,
       "title": "ブラックボルト BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1323,7 +1365,7 @@
       "start": null,
       "end": null,
       "title": "熱風のアリーナ BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1337,7 +1379,7 @@
       "start": null,
       "end": null,
       "title": "バトルパートナーズ BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1351,7 +1393,7 @@
       "start": null,
       "end": null,
       "title": "テラスタルフェスex BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1365,7 +1407,7 @@
       "start": null,
       "end": null,
       "title": "メガシンフォニア BOX",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": false,
       "notified_end": null,
       "round_label": "",
@@ -1572,7 +1614,7 @@
       "start": "2026-11-06T16:00:00+09:00",
       "end": "2026-11-10T16:59:00+09:00",
       "title": "拡張パック『ハドウシーカー』",
-      "last_observed": "2026-11-07T11:23:08.950596+09:00",
+      "last_observed": "2026-11-07T12:58:03.760681+09:00",
       "notified": true,
       "notified_end": "2026-11-10T16:59:00+09:00",
       "round_label": "2回目",
@@ -1638,7 +1680,11 @@
       "end": null,
       "direct": false,
       "period": "4月20日(月)14時~",
-      "legacy_unverified": true
+      "round_label": "",
+      "tentative": false,
+      "application_deadline": false,
+      "calendar_error": false,
+      "start_precision": "minute"
     },
     "https://www.amazon.co.jp/dp/B0FSJXSPPX": {
       "title": "ムニキスゼロ BOX",
@@ -1709,7 +1755,11 @@
       "end": null,
       "direct": false,
       "period": "",
-      "legacy_unverified": true
+      "round_label": "",
+      "tentative": false,
+      "application_deadline": false,
+      "calendar_error": false,
+      "start_precision": "day"
     },
     "https://www.amazon.co.jp/dp/B0F189YH8W": {
       "title": "メガシンフォニア BOX",
@@ -1744,48 +1794,48 @@
   "source_status": {
     "ポケゲトちゃんねる": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 31,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00",
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00",
       "articles": 68,
       "cached_articles": 68
     },
     "Mirar": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 15,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00"
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "ポケカ抽選ボード": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 7,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00"
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "カード抽選まとめ": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 2,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00"
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "ポケモンセンター公式FAQ": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 1,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00"
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00"
     },
     "トレトク公式ブログ": {
       "status": "ok",
-      "checked_at": "2026-11-07T11:23:08.950596+09:00",
+      "checked_at": "2026-11-07T12:58:03.760681+09:00",
       "offers": 15,
-      "last_success_at": "2026-11-07T11:23:08.950596+09:00",
+      "last_success_at": "2026-11-07T12:58:03.760681+09:00",
       "articles": 33
     }
   },
   "last_check": {
-    "run_id": "42328967073",
+    "run_id": "42336316530",
     "run_attempt": "1",
-    "checked_at": "2026-11-07T11:23:08.950596+09:00",
+    "checked_at": "2026-11-07T12:58:03.760681+09:00",
     "retry_not_before": null,
     "errors": [],
     "warnings": [],
